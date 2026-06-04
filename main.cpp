@@ -6,12 +6,14 @@
 #include <iostream>
 #include <vector>
 
-const int width = 800;
-const int height = 600;
+const int width = 3000;
+const int height = 2000;
 const double fov = 3.1415926 / 3.5;
 
 struct Material {
-    TGAColor color;
+    TGAColor diffuseColor;
+    double specular_exponent;
+    vec3 albedo;
 };
 
 struct Light {
@@ -56,7 +58,7 @@ bool scene_intersect(const vec3& orig, const vec3& dir, const std::vector<Sphere
             t = t1;
             hit_point = hitPos;
             N = normalized(hit_point - sphere.center);
-            material.color = sphere.material.color;
+            material = sphere.material;
         }
     }
     return t < 1000.;
@@ -72,10 +74,10 @@ TGAColor ray_cast(const vec3& orig,const vec3& dir,const std::vector<Sphere>& sp
     double diffuse = 0., specular = 0.;
     TGAColor reflect_color;
    
-    if (!scene_intersect(orig,dir,spheres,lights,hit_point,N,material)||depth >= 4)return { 10,10,10 };//啥也每打到，返回背景色
+    if (!scene_intersect(orig,dir,spheres,lights,hit_point,N,material)||depth >= 4)return { 204, 179, 51, 255 };//啥也每打到，返回背景色
 
     vec3 reflectDir = reflect(dir, N);
-    vec3 reflectOrig = (reflectDir * N < 0) ? (hit_point - reflectDir * 1e-3) : (hit_point + reflectDir * 1e-3);
+    vec3 reflectOrig = (reflectDir * N < 0) ? (hit_point - N * 1e-3) : (hit_point + N * 1e-3);
     reflect_color = ray_cast(reflectOrig, reflectDir, spheres, lights, depth + 1);
 
     for (const Light& light : lights) {
@@ -89,12 +91,12 @@ TGAColor ray_cast(const vec3& orig,const vec3& dir,const std::vector<Sphere>& sp
         diffuse += std::max(0., lightDir * N) * light.intensity;
         vec3 r = normalized(2 * (N * lightDir) * N - lightDir);
         vec3 eye = normalized(orig - hit_point);
-        specular += std::pow(std::max(eye * r, 0.), 35) * light.intensity;
+        specular += std::pow(std::max(eye * r, 0.), material.specular_exponent) * light.intensity;
     }
     for (int channel : {0, 1, 2}) {
-        material.color[channel] = std::min(255.,material.color[channel] * (diffuse*.4+specular*2.)+reflect_color[channel]*1.5);
+        material.diffuseColor[channel] = std::min(255.,material.diffuseColor[channel] * (diffuse * material.albedo[0] + specular * material.albedo[1]) + reflect_color[channel] * material.albedo[2]);
     }
-    return material.color;
+    return material.diffuseColor;
 }
 
 void rend(TGAImage& framebuffer, const std::vector<Sphere>& spheres,const std::vector<Light>& lights) {
@@ -115,20 +117,21 @@ void rend(TGAImage& framebuffer, const std::vector<Sphere>& spheres,const std::v
 int main(int argc, char** argv) {
     TGAImage framebuffer(width, height, TGAImage::RGB);
 
-    Material ivory       {{102, 102, 77, 255}};
-    Material red_rubber  {{77, 26, 26, 255}};
+    Material ivory      {{77, 102, 102, 255}, 50., {0.6, 0.3, 0.1}};
+    Material red_rubber {{26, 26, 77, 255}, 10., {0.9, 0.1, 0.0}};
+    Material mirror     {{255, 255, 255, 255}, 1425., {0.0, 10.0, 0.8}};
 
     std::vector<Sphere> objs{
         {{-3, 0, -16}, 2., ivory},
-        {{-1.0, -1.5, -12}, 2., ivory},
+        {{-1.0, -1.5, -12}, 2., mirror},
         {{1.5, -0.5, -18}, 3., red_rubber},
-        {{7, 5, -18}, 4., ivory},
+        {{7, 5, -18}, 4., mirror},
     };
 
     std::vector<Light> lights{
        {{-20, 20, 20}, 1.5},
-       {{30, 50, -25}, 3.},
-       {{30, 20, 30}, 2.},
+       {{30, 50, -25}, 1.8},
+       {{30, 20, 30}, 1.7},
     };
 
     rend(framebuffer, objs,lights);
